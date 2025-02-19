@@ -1,0 +1,46 @@
+#!/bin/bash
+
+# Usage: ./enhanced_symbolicate.sh <app_binary> <load_address> <crash_log> <output_file>
+# Example: ./enhanced_symbolicate.sh MyApp 0x100000000 crash_log.txt symbolicated_output.txt
+
+if [ "$#" -ne 4 ]; then
+    echo "Usage: $0 <app_binary> <load_address> <crash_log> <output_file>"
+    exit 1
+fi
+
+APP_BINARY=$1
+LOAD_ADDRESS=$2
+CRASH_LOG=$3
+OUTPUT_FILE=$4
+
+# Clear the output file if it exists
+> "$OUTPUT_FILE"
+
+# Function to symbolicate a single address using atos
+symbolicate_address() {
+    local address=$1
+    atos -arch arm64 -o "$APP_BINARY" -l "$LOAD_ADDRESS" "$address"
+}
+
+# Read the crash log line by line
+while IFS= read -r line; do
+    # Check if the line contains an address (e.g., 0x followed by hexadecimal characters)
+    if echo "$line" | grep -qE '0x[0-9a-f]+'; then
+        # Extract the address (assuming the first matching address is what we need to symbolicate)
+        address=$(echo "$line" | grep -oE '0x[0-9a-f]+')
+
+        # Symbolicate the address
+        symbol=$(symbolicate_address "$address")
+
+        # Replace the address with the symbolicated value in the line
+        symbolicated_line=$(echo "$line" | sed "s/$address/$symbol/g")
+
+        # Append the symbolicated line to the output file
+        echo "$symbolicated_line" >> "$OUTPUT_FILE"
+    else
+        # If no address is found, copy the line as-is to the output file
+        echo "$line" >> "$OUTPUT_FILE"
+    fi
+done < "$CRASH_LOG"
+
+echo "Symbolicated crash log saved to '$OUTPUT_FILE'"
